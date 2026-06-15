@@ -59,28 +59,28 @@ export async function GET(request, { params }) {
             progress: sim.progress,
           });
 
-          // Send new vulnerabilities
-          const vulns = await Vulnerability.find({
+          // Send new vulnerabilities — sort oldest-first and skip already-sent findings
+          const newVulns = await Vulnerability.find({
             simulationId: id,
             isDuplicate: false,
           })
-            .sort({ createdAt: -1 })
-            .limit(5)
+            .sort({ createdAt: 1 })
+            .skip(lastVulnCount)
             .lean();
 
-          if (vulns.length > lastVulnCount) {
-            for (const vuln of vulns.slice(0, vulns.length - lastVulnCount)) {
-              sendEvent({
-                type: "finding",
-                vulnerability: {
-                  title: vuln.title,
-                  category: vuln.category,
-                  severity: vuln.bssScore?.severity,
-                  generationNumber: vuln.generationNumber,
-                },
-              });
-            }
-            lastVulnCount = vulns.length;
+          for (const vuln of newVulns) {
+            sendEvent({
+              type: "finding",
+              vulnerability: {
+                title: vuln.title,
+                category: vuln.category,
+                severity: vuln.bssScore?.severity,
+                generationNumber: vuln.generationNumber,
+              },
+            });
+          }
+          if (newVulns.length > 0) {
+            lastVulnCount += newVulns.length;
           }
 
           // Check if simulation is done

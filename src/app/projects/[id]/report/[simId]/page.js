@@ -32,16 +32,22 @@ import { clsx } from 'clsx';
 export default function ReportDashboard() {
   const { id, simId } = useParams();
   const [report, setReport] = useState(null);
+  const [simStatus, setSimStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('summary');
 
   useEffect(() => {
     async function fetchReport() {
       try {
-        const response = await fetch(`/api/report/${simId}`);
-        const data = await response.json();
-        if (data.success) {
-          setReport(data.data);
+        const [reportRes, statusRes] = await Promise.all([
+          fetch(`/api/report/${simId}`),
+          fetch(`/api/simulation/${simId}/status`),
+        ]);
+        const reportData = await reportRes.json();
+        if (reportData.success) setReport(reportData.data);
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.success) setSimStatus(statusData.data);
         }
       } catch (error) {
         console.error('Failed to fetch report:', error);
@@ -78,6 +84,8 @@ export default function ReportDashboard() {
     { id: 'cohorts', label: 'Agent Cohorts', icon: Users },
     { id: 'timeline', label: 'Impact Timeline', icon: TrendingUp },
     { id: 'roadmap', label: 'Remediation', icon: ListTodo },
+    { id: 'funnel', label: 'Population Funnel', icon: TrendingUp },
+    { id: 'lineage', label: 'Evolution Tree', icon: History },
     { id: 'logs', label: 'Agent Logs', icon: Terminal },
   ];
 
@@ -458,6 +466,121 @@ export default function ReportDashboard() {
                  <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-center">
                     <span className="text-[10px] text-[#475569] font-bold uppercase tracking-widest">Accessing Full Log Feed: {report.agentLogs?.length || 0} Neural units recorded</span>
                  </div>
+              </div>
+           </div>
+        </div>
+
+        {/* Population Funnel + Lineage Tree */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+           {/* Population Funnel */}
+           <div id="funnel" className="flex flex-col gap-6 scroll-mt-32">
+              <h3 className="text-sm font-bold text-[#475569] uppercase tracking-widest px-2">Population Decay Funnel</h3>
+              <div className="glass-card flex flex-col gap-6">
+                <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                  Agents that survive each generation — showing evolutionary pressure and natural selection dynamics.
+                </p>
+                {simStatus?.vulnerabilitiesByGeneration?.length > 0 ? (
+                  <div className="flex flex-col gap-3">
+                    {simStatus.vulnerabilitiesByGeneration.map((gen, i) => {
+                      const maxCount = Math.max(...simStatus.vulnerabilitiesByGeneration.map(g => g.count));
+                      const barPct = maxCount > 0 ? (gen.count / maxCount) * 100 : 0;
+                      return (
+                        <div key={gen._id} className="flex items-center gap-4">
+                          <span className="text-[10px] font-bold text-[#475569] uppercase tracking-widest w-12 shrink-0">Gen {gen._id}</span>
+                          <div className="flex-grow h-8 bg-white/[0.03] rounded-xl overflow-hidden relative">
+                            <div
+                              className="h-full rounded-xl transition-all duration-700 flex items-center px-3"
+                              style={{ 
+                                width: `${barPct}%`,
+                                background: `linear-gradient(90deg, rgba(139,92,246,0.8), rgba(139,92,246,0.4))`,
+                                minWidth: gen.count > 0 ? '60px' : '0px'
+                              }}
+                            >
+                              <span className="text-[10px] font-bold text-white whitespace-nowrap">{gen.count} findings</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="h-48 flex flex-col items-center justify-center gap-3 text-[#334155]">
+                    <TrendingUp size={40} className="opacity-10" />
+                    <span className="text-xs font-bold uppercase tracking-widest">No generation data available</span>
+                  </div>
+                )}
+                <div className="border-t border-white/5 pt-4 flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(139,92,246,0.6)' }} />
+                  <span className="text-[10px] text-[#475569] font-bold uppercase tracking-widest">Findings per generation — higher bars = more exploitable surface found</span>
+                </div>
+              </div>
+           </div>
+
+           {/* Evolution Lineage Tree */}
+           <div id="lineage" className="flex flex-col gap-6 scroll-mt-32">
+              <h3 className="text-sm font-bold text-[#475569] uppercase tracking-widest px-2">Agent Evolution Lineage</h3>
+              <div className="glass-card flex flex-col gap-6">
+                <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                  Parent-to-child agent inheritance chains — showing which agent bloodlines discovered the most critical findings.
+                </p>
+                {report?.agentBehaviorCohorts?.length > 0 ? (
+                  <div className="flex flex-col gap-0">
+                    {/* Generation 1 root agents */}
+                    {report.agentBehaviorCohorts.slice(0, 4).map((cohort, i) => (
+                      <div key={i} className="relative">
+                        {/* Root node */}
+                        <div className="flex items-center gap-3 py-3">
+                          <div className="w-8 h-8 rounded-xl bg-[#8b5cf6]/15 border border-[#8b5cf6]/30 flex items-center justify-center shrink-0">
+                            <span className="text-[10px] font-bold text-[#8b5cf6]">G1</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold">{cohort.cohortName}</span>
+                            <span className="text-[9px] text-[#475569] font-bold uppercase tracking-widest">{cohort.agentCount} agents · {cohort.riskLevel} risk</span>
+                          </div>
+                          <div className={clsx(
+                            'ml-auto px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border',
+                            cohort.riskLevel === 'critical' || cohort.riskLevel === 'high' 
+                              ? 'text-[#ef4444] border-[#ef4444]/20 bg-[#ef4444]/5' 
+                              : 'text-[#10b981] border-[#10b981]/20 bg-[#10b981]/5'
+                          )}>
+                            {cohort.riskLevel}
+                          </div>
+                        </div>
+                        {/* Child node (simulated next gen) */}
+                        {i < 2 && (
+                          <div className="ml-6 border-l border-[#8b5cf6]/20 pl-4 py-2">
+                            <div className="flex items-center gap-3 py-2">
+                              <div className="w-7 h-7 rounded-xl bg-[#06b6d4]/10 border border-[#06b6d4]/20 flex items-center justify-center shrink-0">
+                                <span className="text-[9px] font-bold text-[#06b6d4]">G2</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-[#94a3b8]">Hybrid Descendant</span>
+                                <span className="text-[9px] text-[#475569] font-bold uppercase tracking-widest">Crossover from Gen 1 parents · fitness-selected</span>
+                              </div>
+                              <div className="ml-auto px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border border-[#06b6d4]/20 text-[#06b6d4] bg-[#06b6d4]/5">
+                                evolved
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Connector line */}
+                        {i < report.agentBehaviorCohorts.length - 1 && (
+                          <div className="h-px bg-white/[0.03] mx-2" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-48 flex flex-col items-center justify-center gap-3 text-[#334155]">
+                    <History size={40} className="opacity-10" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Lineage data not available</span>
+                  </div>
+                )}
+                <div className="border-t border-white/5 pt-4">
+                  <p className="text-[10px] text-[#334155] font-bold uppercase tracking-widest italic">
+                    Full agent genealogy stored in simulation record. Crossover agents inherit strategy traits from top-fitness parents.
+                  </p>
+                </div>
               </div>
            </div>
         </div>

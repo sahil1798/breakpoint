@@ -8,14 +8,19 @@ import {
   Target, 
   ShieldAlert, 
   Fingerprint, 
-  ChevronRight, 
   Plus, 
   Sparkles,
   Search,
   Activity,
   Flame,
-  Globe,
-  Settings2
+  Settings2,
+  Users,
+  Bot,
+  Skull,
+  Eye,
+  Brain,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +33,53 @@ const presets = [
   { id: 'adversarial', name: 'Adversarial Siege', icon: Flame, agents: 150, gens: 10, description: 'Maximum intensity red-teaming.', color: '#ef4444' },
 ];
 
+const ARCHETYPES = [
+  { id: 'novice', label: 'Novice', icon: Users, color: '#3b82f6', description: 'Unsophisticated users who stumble into edge cases' },
+  { id: 'script_kiddie', label: 'Script Kiddie', icon: Bot, color: '#06b6d4', description: 'Tool-driven attackers using known exploits' },
+  { id: 'social_engineer', label: 'Social Engineer', icon: Brain, color: '#f59e0b', description: 'Persuasion and trust-manipulation specialists' },
+  { id: 'apt', label: 'APT / Nation State', icon: Skull, color: '#ef4444', description: 'Advanced persistent threat — methodical, patient' },
+  { id: 'insider', label: 'Malicious Insider', icon: Eye, color: '#8b5cf6', description: 'Trusted user abusing privileged access' },
+];
+
+const DEFAULT_COMPOSITION = { novice: 20, script_kiddie: 25, social_engineer: 20, apt: 20, insider: 15 };
+
+function CompositionSlider({ archetype, value, onChange }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div 
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: `${archetype.color}20`, color: archetype.color }}
+          >
+            <archetype.icon size={14} />
+          </div>
+          <span className="text-xs font-bold tracking-tight">{archetype.label}</span>
+        </div>
+        <span 
+          className="text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
+          style={{ color: archetype.color, backgroundColor: `${archetype.color}15` }}
+        >
+          {value}%
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+        style={{ 
+          background: `linear-gradient(to right, ${archetype.color} ${value}%, rgba(255,255,255,0.08) ${value}%)`,
+          accentColor: archetype.color
+        }}
+      />
+      <p className="text-[9px] text-[#334155] font-bold uppercase tracking-widest">{archetype.description}</p>
+    </div>
+  );
+}
+
 export default function SimulationConfigure() {
   const { id } = useParams();
   const router = useRouter();
@@ -35,12 +87,39 @@ export default function SimulationConfigure() {
   const [intensity, setIntensity] = useState('standard');
   const [focusAreas, setFocusAreas] = useState([]);
   const [newFocus, setNewFocus] = useState('');
+  const [composition, setComposition] = useState({ ...DEFAULT_COMPOSITION });
+  const [customAgents, setCustomAgents] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const currentPreset = presets.find(p => p.id === intensity);
+
+  // Normalize composition so sum = 100
+  const totalPct = Object.values(composition).reduce((a, b) => a + b, 0);
+  
+  const updateArchetype = (id, val) => {
+    setComposition(prev => ({ ...prev, [id]: val }));
+  };
+
+  const normalizeComposition = () => {
+    const total = Object.values(composition).reduce((a, b) => a + b, 0);
+    if (total === 0) return DEFAULT_COMPOSITION;
+    return Object.fromEntries(
+      Object.entries(composition).map(([k, v]) => [k, Math.round((v / total) * 100)])
+    );
+  };
 
   const handleStart = async () => {
     setLoading(true);
     try {
+      const normalizedComposition = normalizeComposition();
+      
+      // Parse custom agents from textarea (one per line)
+      const parsedCustomAgents = customAgents
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(desc => ({ description: desc }));
+
       // 1. Configure
       const configRes = await fetch('/api/simulation/configure', {
         method: 'POST',
@@ -50,7 +129,9 @@ export default function SimulationConfigure() {
           intensity, 
           focusAreas,
           totalAgents: currentPreset.agents,
-          totalGenerations: currentPreset.gens
+          totalGenerations: currentPreset.gens,
+          agentComposition: normalizedComposition,
+          customAgents: parsedCustomAgents,
         }),
       });
       const configData = await configRes.json();
@@ -86,6 +167,8 @@ export default function SimulationConfigure() {
       setNewFocus('');
     }
   };
+
+  const totalPctDisplay = totalPct;
 
   return (
     <AppShell>
@@ -131,6 +214,87 @@ export default function SimulationConfigure() {
                   </button>
                 ))}
              </div>
+          </div>
+
+          {/* Agent Composition Section */}
+          <div className="flex flex-col gap-6">
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center justify-between w-full group"
+            >
+              <h3 className="text-sm font-bold text-[#475569] uppercase tracking-widest flex items-center gap-2">
+                <Settings2 size={14} className="text-[#f59e0b]" /> Agent Composition
+                <span className="text-[10px] text-[#334155] font-bold uppercase tracking-widest ml-2 italic">Optional — Advanced</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <span 
+                  className={clsx(
+                    'text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg',
+                    totalPctDisplay !== 100 ? 'text-[#f59e0b] bg-[#f59e0b]/10' : 'text-[#10b981] bg-[#10b981]/10'
+                  )}
+                >
+                  {totalPctDisplay}% allocated
+                </span>
+                {showAdvanced ? <ChevronUp size={16} className="text-[#475569]" /> : <ChevronDown size={16} className="text-[#475569]" />}
+              </div>
+            </button>
+
+            <AnimatePresence>
+              {showAdvanced && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="glass-card flex flex-col gap-8">
+                    <div className="flex flex-col gap-6">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                          Define the archetype distribution of your agent population. Values are normalized to 100% automatically.
+                        </p>
+                        <button
+                          onClick={() => setComposition({ ...DEFAULT_COMPOSITION })}
+                          className="text-[10px] text-[#475569] font-bold uppercase tracking-widest hover:text-white transition-colors"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      
+                      <div className="flex flex-col gap-6">
+                        {ARCHETYPES.map(arch => (
+                          <CompositionSlider
+                            key={arch.id}
+                            archetype={arch}
+                            value={composition[arch.id] || 0}
+                            onChange={(val) => updateArchetype(arch.id, val)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Custom Agent Scenarios */}
+                    <div className="border-t border-white/5 pt-6 flex flex-col gap-4">
+                      <div className="flex items-center gap-2">
+                        <Bot size={14} className="text-[#8b5cf6]" />
+                        <h4 className="text-xs font-bold text-[#475569] uppercase tracking-widest">Custom Agent Personas</h4>
+                        <span className="text-[9px] text-[#334155] font-bold uppercase tracking-widest italic">Optional</span>
+                      </div>
+                      <textarea
+                        value={customAgents}
+                        onChange={(e) => setCustomAgents(e.target.value)}
+                        placeholder={"One persona per line. E.g.:\nA paranoid privacy advocate who refuses cookies\nA power user who uses browser extensions to bypass rate limits"}
+                        rows={4}
+                        className="w-full bg-[rgba(255,255,255,0.03)] border border-white/5 rounded-xl px-4 py-3 text-sm font-medium focus:ring-1 focus:ring-[#8b5cf6] focus:border-[#8b5cf6] placeholder:text-[#334155] resize-none font-mono text-xs leading-relaxed"
+                      />
+                      <p className="text-[10px] text-[#334155] font-bold uppercase tracking-widest">
+                        Custom personas are injected as additional agents alongside the archetype population.
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
@@ -209,6 +373,31 @@ export default function SimulationConfigure() {
                    <span className="text-lg font-bold">{currentPreset.agents * currentPreset.gens}+ Calls</span>
                 </div>
              </div>
+
+             {showAdvanced && (
+               <div className="pt-4 border-t border-white/5 grid grid-cols-5 gap-3">
+                 {ARCHETYPES.map(arch => {
+                   const normalized = normalizeComposition();
+                   return (
+                     <div key={arch.id} className="flex flex-col items-center gap-1.5">
+                       <div 
+                         className="w-full h-1.5 rounded-full"
+                         style={{ backgroundColor: `${arch.color}30` }}
+                       >
+                         <div 
+                           className="h-full rounded-full transition-all duration-500"
+                           style={{ width: `${normalized[arch.id] || 0}%`, backgroundColor: arch.color }}
+                         />
+                       </div>
+                       <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: arch.color }}>
+                         {arch.label.split(' ')[0]}
+                       </span>
+                       <span className="text-[9px] text-[#475569] font-bold">{normalized[arch.id] || 0}%</span>
+                     </div>
+                   );
+                 })}
+               </div>
+             )}
 
              <p className="text-xs text-[#64748b] leading-relaxed font-medium italic">
                 Strategic Note: Agents will be spawned using Latin Hypercube Sampling to maximize personality diversity across all 8 dimensions.
